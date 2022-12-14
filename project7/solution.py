@@ -1,6 +1,5 @@
-# Project 6
+# Project 7
 # Student name: Daniel Passos
-
 from rply import LexerGenerator, LexingError, ParserGenerator, Token
 
 
@@ -35,6 +34,10 @@ def createLexer():
     LexGen.add("NOT", r"not")
     LexGen.add("IF", r"if")
     LexGen.add("ELSE", r"else")
+    LexGen.add("WHILE", r"while")
+    LexGen.add("FUNCTION", r"function")
+    LexGen.add("RETURN", r"return")
+    LexGen.add("CALL", r"call")
     LexGen.add("IDENTIFIER", r"[a-zA-Z]+[\da-zA-Z]*")
     LexGen.add("NUMBER", r"[+-]?[0-9]+([.]?\d+|)")
     LexGen.add("STRING", r"\"[^\"]*\"")
@@ -45,6 +48,7 @@ def createLexer():
     LexGen.add("ASSIGNMENT", r"=")
     LexGen.add("OPEN_PARENS", r"\(")
     LexGen.add("CLOSE_PARENS", r'\)')
+    LexGen.add("COMMA", r",")
     LexGen.ignore(r'\s+')
     return LexGen.build()
 
@@ -59,11 +63,12 @@ def createParser():
     ParseGen = ParserGenerator(
         ['GOGREEN','GOWHITE','SPARTYSAYS','SEMICOLON','NVAR','SVAR',"EQ", "GREATEREQ", "NOTEQ", "LESSEQ", "LESS", "GREATER", 
          'IDENTIFIER','NUMBER', 'STRING', 'PLUS', 'MINUS', 'MUL', 'DIV','ASSIGNMENT'
-         ,'OPEN_PARENS', 'CLOSE_PARENS', "OR", "NOT", "AND", "IF", "ELSE" ],
+         ,'OPEN_PARENS', 'CLOSE_PARENS', "OR", "NOT", "AND", "IF", "ELSE", "WHILE", "FUNCTION", "RETURN", "CALL", "COMMA" ],
         precedence=[('left',['PLUS', 'MINUS', 'NUMBER']),
                     ('left', ['MUL', 'DIV']),
                     ("left", ["LESSEQ", "GREATEREQ", "LESS", "GREATER","EQ", "NOTEQ"]),
-                    ("left" , ["AND", "OR", "NOT"])]
+                    ("left" , ["AND", "OR", "NOT"]),
+                    ("left", ["CALL", "FUNCTION"])]
     )
     
     @ParseGen.production('program : scope')
@@ -124,6 +129,89 @@ def createParser():
             "identifier": p[0].getstr(),
             "expression": p[2],
         }
+        
+        
+    @ParseGen.production('statement : FUNCTION IDENTIFIER OPEN_PARENS parameters CLOSE_PARENS scope')
+    def func_declaration_params(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "function",
+            "identifier": p[1].getstr(),
+            "parameters": p[3],
+            "scope": p[5]
+        }
+        
+    @ParseGen.production('statement : FUNCTION IDENTIFIER OPEN_PARENS CLOSE_PARENS scope')
+    def func_declaration(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "function",
+            "identifier": p[1].getstr(),
+            "parameters": [],
+            "scope": p[4]
+        }
+        
+    @ParseGen.production('statement : CALL IDENTIFIER OPEN_PARENS arguments CLOSE_PARENS SEMICOLON')
+    def args_func_call(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "call",
+            "identifier": p[1].getstr(),
+            "arguments": p[3],
+        }
+        
+    @ParseGen.production('statement : CALL IDENTIFIER OPEN_PARENS CLOSE_PARENS SEMICOLON')
+    def func_call(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "call",
+            "identifier": p[1].getstr(),
+            "arguments": [],
+        }
+
+    @ParseGen.production('arguments : argument')
+    def arguments(id, p:list[Token]):
+        return [p[0]]
+
+    @ParseGen.production('arguments : arguments COMMA argument')
+    def argumentList(id, p:list[Token]):
+        p[0].append(p[2])
+        return p[0]
+
+    @ParseGen.production('argument : expression')
+    def argument(id, p:list[Token]):
+        return p[0]
+
+    @ParseGen.production('statement : RETURN expression SEMICOLON')
+    def returnStatement(id, p:list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "return",
+            "expression": p[1],
+        }
+
+    @ParseGen.production('parameters : parameter')
+    def parameters(id, p:list[Token]):
+        return [p[0]]
+
+    @ParseGen.production('parameters : parameters COMMA parameter')
+    def parameter_list(id, p:list[Token]):
+        p[0].append(p[2])
+        return p[0]
+    
+    @ParseGen.production('parameter : IDENTIFIER')
+    def parameter(id, p:list[Token]):
+        return p[0].getstr()
 
     @ParseGen.production('statement : IF boolexp scope')
     def bool_if(id, p:list[Token]):
@@ -136,6 +224,17 @@ def createParser():
             "scope": p[2],
             
     } 
+        
+    @ParseGen.production('statement : WHILE boolexp scope')
+    def statement_assignment(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "statement",
+            "statement_type": "while",
+            "boolexp": p[1],
+            "scope": p[2],
+        }
         
     @ParseGen.production('statement : IF boolexp scope ELSE scope')
     def bool_ifElse(id, p:list[Token]):
@@ -236,6 +335,27 @@ def createParser():
                 "right": p[2],
             }
             
+    @ParseGen.production('expression : CALL IDENTIFIER OPEN_PARENS arguments CLOSE_PARENS')
+    def func_expression_args(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "expression",
+            "expression_type": "call",
+            "identifier": p[1].getstr(),
+            "arguments": p[3],
+        }
+    
+    @ParseGen.production('expression : CALL IDENTIFIER OPEN_PARENS CLOSE_PARENS')
+    def func_expression(id, p: list[Token]):
+        id[0] += 1
+        return {
+            "id": id[0],
+            "type": "expression",
+            "expression_type": "call",
+            "identifier": p[1].getstr(),
+            "arguments": [],
+        }
     
     @ParseGen.error
     def error_handler(id, token: Token):
@@ -270,6 +390,21 @@ def evaluate_expression(expression, rts: RunTimeState):
         return rts.symtable[expression['identifier']]['value']
     if (op := expression['expression_type']) == 'plus' or op == 'mul' or  op == 'minus' or op =='div':
         return eval_arithmetic_ops(expression['left'], expression['right'], op, rts)
+    if expression['expression_type'] == 'call':
+        scoperts = RunTimeState()
+        
+        params = rts.symtable[expression['identifier']]['parameters']
+        for k in rts.symtable.keys():
+            if rts.symtable[k]['type'] == 'function':
+                scoperts.symtable[k] = rts.symtable[k]
+                
+        for i in range(len(expression['arguments'])):
+            argexpr = expression["arguments"][i]
+            scoperts.symtable[params[i]] = {
+                "type": "identifier",
+                "value": evaluate_expression(argexpr, rts)
+            }
+        return interpret_scope(rts.symtable[expression['identifier']]['scope'], scoperts)
     
     print('Expression evaluation error: unknown expression type')
     
@@ -328,6 +463,7 @@ def interpret_scope(scope, rts: RunTimeState):
         
         if statement['statement_type'] == 'nvar' or statement['statement_type'] == 'svar' or statement['statement_type'] == 'assignment':
             rts.symtable[statement['identifier']] = {
+                'type': 'variable',
                 'value': evaluate_expression(statement['expression'], rts)
             }
             
@@ -348,9 +484,50 @@ def interpret_scope(scope, rts: RunTimeState):
                 interpret_scope(statement["truescope"], scoperts)
             else:
                 interpret_scope(statement["falsescope"], scoperts)
+                
+        if statement["statement_type"] == "while":
+            scoperts = RunTimeState()
+            scoperts.symtable = rts.symtable
+
+            while evaluate_boolexp(statement["boolexp"], rts):
+                scoperts.sso = []
+                scoperts.pc = 0
+                scoperts.scache = {}
+                scoperts.som = {}
+                scoperts.symtable = rts.symtable
+
+                interpret_scope(statement["scope"], scoperts)
+                
+        if statement["statement_type"] == "function":
+            rts.symtable[statement["identifier"]] = {
+                "type": "function",
+                "scope": statement["scope"],
+                "parameters": statement["parameters"]
+            }
+
+        if statement["statement_type"] == "call":
+            scoperts = RunTimeState()
+
+            params = rts.symtable[statement["identifier"]]["parameters"]
+            for k in rts.symtable.keys():
+                if rts.symtable[k]["type"] == "function":
+                    scoperts.symtable[k] = rts.symtable[k]
+                    
+            
+            for i in range(len(statement["arguments"])):
+                argexpr = statement["arguments"][i]
+
+                scoperts.symtable[params[i]] = {
+                    "type": "variable",
+                    "value": evaluate_expression(argexpr, rts)
+                }
+
+            interpret_scope(rts.symtable[statement["identifier"]]["scope"], scoperts)
+
+        if statement["statement_type"] == "return":
+            return evaluate_expression(statement["expression"], rts)
             
         if rts.pc == len(rts.sso) - 1:
-            print(rts.symtable)
             break
         
         rts.pc = rts.som[rts.sso[rts.pc]] + 1
@@ -360,22 +537,3 @@ def interpret_spartytalk(program):
     ir = parse_spartytalk(program)
     interpret_scope(ir['scope'], rts)
     
-interpret_spartytalk("""
-    gogreen;
-        nvar a = 1;
-        nvar b = 1;
-        if a == 1 or b != 1 gogreen;
-            spartysays "topsy";
-            if 7 == 8 gogreen;
-                spartysays "nest";
-            gowhite; else gogreen;
-                spartysays "alternest";
-                a = 6;
-            gowhite;
-        gowhite; else gogreen;
-            spartysays "turvy";
-        gowhite;
-
-        spartysays a;
-    gowhite;
-    """)
